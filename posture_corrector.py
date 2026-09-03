@@ -8,6 +8,7 @@ import pyttsx3
 import time
 from collections import deque, defaultdict
 
+
 # ------------------ Configuration / Hyperparameters ------------------
 SMOOTHING_WINDOW = 5           # number of frames to smooth joint coords / angles
 MIN_VISIBILITY = 0.45          # minimum average visibility to accept a side
@@ -23,6 +24,7 @@ BICEP = {
     "progress_down_thresh": 15,
     "progress_up_thresh": 90
 }
+
 SQUAT = {
     "back_angle_range": (140, 180),
     "back_ok": 78,
@@ -30,11 +32,89 @@ SQUAT = {
     "progress_down_thresh": 85,
     "progress_up_thresh": 20
 }
+
 PLANK = {
     "ref_angle_range": (140, 180),
     "back_ok": 85,
     "hold_seconds": 20
 }
+
+PUSHUP = {
+    "down_threshold": 90,
+    "up_threshold": 160,
+    "min_visibility": 0.7,
+    "hip_sag_tolerance": 0.08
+}
+
+LUNGE = {
+    "down_threshold": 100,
+    "up_threshold": 160,
+    "min_visibility": 0.7,
+    "balance_tolerance": 0.10
+}
+
+SHOULDER_PRESS = {
+    "up_threshold": 160,
+    "down_threshold": 90,
+    "min_visibility": 0.7
+}
+
+GLUTE_BRIDGE = {
+    "up_threshold": 160,
+    "down_threshold": 100,
+    "min_visibility": 0.7
+}
+
+MOUNTAIN_CLIMBER = {
+    "knee_threshold": 0.55,
+    "min_visibility": 0.7
+}
+
+JUMPING_JACKS = {
+    "arm_up_threshold": 0.75,
+    "leg_open_threshold": 0.35,
+    "min_visibility": 0.7
+}
+
+HIGH_KNEES = {
+    "knee_up_threshold": 0.75,
+    "min_visibility": 0.7
+}
+
+SIDE_LUNGE = {
+    "down_threshold": 110,
+    "up_threshold": 160,
+    "min_visibility": 0.7,
+    "hip_shift_threshold": 0.12
+}
+
+SIDE_LEG_RAISE = {
+    "up_threshold": 0.18,
+    "down_threshold": 0.06,
+    "min_visibility": 0.7,
+    "max_knee_bend": 150
+}
+
+WALL_SIT = {
+    "knee_angle_target": 90,
+    "knee_angle_tolerance": 20,
+    "min_visibility": 0.7,
+    "hold_seconds": 20
+}
+
+STANDING_KNEE_ELBOW = {
+    "knee_up_threshold": 0.45,
+    "min_visibility": 0.7
+}
+
+ARM_CIRCLES = {
+    "circle_radius": 0.18,
+    "min_visibility": 0.7,
+    "cooldown": 0.5
+}
+
+
+
 
 # ------------------ Speech Engine (non-blocking wrapper) ------------------
 engine = pyttsx3.init()
@@ -175,9 +255,10 @@ def exercise_logic(exercise_name, landmarks, mp_pose, smoother,
         right_wrist_vis = landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].visibility
         left_knee_vis = landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].visibility
         right_knee_vis = landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].visibility
-        if exercise_name == 'Bicep Curl':
+
+        if exercise_name in ('Bicep Curl', 'Push-ups', 'Shoulder Press','Arm Circles'):
             chosen_side = 'LEFT' if left_wrist_vis >= right_wrist_vis else 'RIGHT'
-        elif exercise_name == 'Squats':
+        elif exercise_name in ('Squats' , 'Lunges', 'Glute Bridge', 'Mountain Climbers', 'Jumping Jacks', 'High Knees','Side Lunges','Side Leg Raises','Wall Sit','Standing Knee-to-Elbow'):
             chosen_side = 'LEFT' if left_knee_vis >= right_knee_vis else 'RIGHT'
         else:
             chosen_side = 'LEFT' if left_wrist_vis >= right_wrist_vis else 'RIGHT'
@@ -185,12 +266,12 @@ def exercise_logic(exercise_name, landmarks, mp_pose, smoother,
         chosen_side = side
 
     # fetch joints for chosen_side
-    shoulder_x, shoulder_y, _ = get_joint('shoulder', chosen_side)
-    elbow_x, elbow_y, _ = get_joint('elbow', chosen_side)
-    wrist_x, wrist_y, _ = get_joint('wrist', chosen_side)
-    hip_x, hip_y, _ = get_joint('hip', chosen_side)
-    knee_x, knee_y, _ = get_joint('knee', chosen_side)
-    ankle_x, ankle_y, _ = get_joint('ankle', chosen_side)
+    shoulder_x, shoulder_y, shoulder_vis = get_joint('shoulder', chosen_side)
+    elbow_x, elbow_y, elbow_vis = get_joint('elbow', chosen_side)
+    wrist_x, wrist_y, wrist_vis = get_joint('wrist', chosen_side)
+    hip_x, hip_y, hip_vis = get_joint('hip', chosen_side)
+    knee_x, knee_y, knee_vis = get_joint('knee', chosen_side)
+    ankle_x, ankle_y, ankle_vis = get_joint('ankle', chosen_side)
 
     shoulder = (shoulder_x, shoulder_y)
     elbow = (elbow_x, elbow_y)
@@ -236,6 +317,473 @@ def exercise_logic(exercise_name, landmarks, mp_pose, smoother,
 
         progress = smooth_progress
 
+    elif exercise_name == "Arm Circles":
+
+        left_shoulder = get_joint("shoulder", "LEFT")
+        left_wrist = get_joint("wrist", "LEFT")
+
+        right_shoulder = get_joint("shoulder", "RIGHT")
+        right_wrist = get_joint("wrist", "RIGHT")
+
+        visible = (
+            left_shoulder[2] >= ARM_CIRCLES["min_visibility"]
+            and left_wrist[2] >= ARM_CIRCLES["min_visibility"]
+            and right_shoulder[2] >= ARM_CIRCLES["min_visibility"]
+            and right_wrist[2] >= ARM_CIRCLES["min_visibility"]
+        )
+
+        # Wrist position relative to each shoulder.
+        left_dx = left_wrist[0] - left_shoulder[0]
+        left_dy = left_wrist[1] - left_shoulder[1]
+
+        right_dx = right_wrist[0] - right_shoulder[0]
+        right_dy = right_wrist[1] - right_shoulder[1]
+
+        left_radius = np.sqrt(
+            left_dx ** 2 + left_dy ** 2
+        )
+
+        right_radius = np.sqrt(
+            right_dx ** 2 + right_dy ** 2
+        )
+
+        arms_extended = (
+            left_radius >= ARM_CIRCLES["circle_radius"]
+            and right_radius >= ARM_CIRCLES["circle_radius"]
+        )
+
+        # Track wrist direction around the shoulder.
+        left_angle = np.degrees(
+            np.arctan2(left_dy, left_dx)
+        )
+
+        right_angle = np.degrees(
+            np.arctan2(right_dy, right_dx)
+        )
+
+        if visible and arms_extended:
+
+            if "circle_prev_angle" not in state:
+                state["circle_prev_angle"] = (
+                    left_angle + right_angle
+                ) / 2
+                state["circle_rotation"] = 0
+
+            current_angle = (
+                left_angle + right_angle
+            ) / 2
+
+            angle_delta = current_angle - state["circle_prev_angle"]
+
+            # Handle angle wrap-around.
+            if angle_delta > 180:
+                angle_delta -= 360
+            elif angle_delta < -180:
+                angle_delta += 360
+
+            state["circle_rotation"] += angle_delta
+            state["circle_prev_angle"] = current_angle
+
+            if abs(state["circle_rotation"]) >= 300:
+
+                if now - last_rep_time > ARM_CIRCLES["cooldown"]:
+                    count += 1
+                    last_rep_time = now
+                    state["circle_rotation"] = 0
+                    speak(f"Arm Circle {count}")
+
+        else:
+            state.pop("circle_prev_angle", None)
+            state["circle_rotation"] = 0
+
+        progress = interp_clip(
+            abs(state.get("circle_rotation", 0)),
+            (0, 300)
+        )
+
+        correct_posture = (
+            visible
+            and arms_extended
+        )
+
+        posture_score = 100 if correct_posture else 70
+    
+    elif exercise_name == "Standing Knee-to-Elbow":
+
+        left_hip = get_joint("hip", "LEFT")
+        left_knee = get_joint("knee", "LEFT")
+        left_elbow = get_joint("elbow", "LEFT")
+
+        right_hip = get_joint("hip", "RIGHT")
+        right_knee = get_joint("knee", "RIGHT")
+        right_elbow = get_joint("elbow", "RIGHT")
+
+        visible = (
+            left_hip[2] >= STANDING_KNEE_ELBOW["min_visibility"]
+            and left_knee[2] >= STANDING_KNEE_ELBOW["min_visibility"]
+            and left_elbow[2] >= STANDING_KNEE_ELBOW["min_visibility"]
+            and right_hip[2] >= STANDING_KNEE_ELBOW["min_visibility"]
+            and right_knee[2] >= STANDING_KNEE_ELBOW["min_visibility"]
+            and right_elbow[2] >= STANDING_KNEE_ELBOW["min_visibility"]
+        )
+
+        left_leg_length = np.linalg.norm(
+            np.array(left_hip[:2]) - np.array(left_knee[:2])
+        )
+
+        right_leg_length = np.linalg.norm(
+            np.array(right_hip[:2]) - np.array(right_knee[:2])
+        )
+
+        left_knee_height = (
+            abs(left_knee[1] - left_hip[1])
+            / max(left_leg_length, 1e-6)
+        )
+
+        right_knee_height = (
+            abs(right_knee[1] - right_hip[1])
+            / max(right_leg_length, 1e-6)
+        )
+
+        left_knee_up = (
+            left_knee_height
+            < STANDING_KNEE_ELBOW["knee_up_threshold"]
+        )
+
+        right_knee_up = (
+            right_knee_height
+            < STANDING_KNEE_ELBOW["knee_up_threshold"]
+        )
+
+        left_elbow_knee_distance = np.linalg.norm(
+            np.array(left_elbow[:2])
+            - np.array(left_knee[:2])
+        )
+
+        right_elbow_knee_distance = np.linalg.norm(
+            np.array(right_elbow[:2])
+            - np.array(right_knee[:2])
+        )
+
+        knee_to_elbow_threshold = 0.25
+
+        left_touch = (
+            left_knee_up
+            and left_elbow_knee_distance
+            < knee_to_elbow_threshold
+        )
+
+        right_touch = (
+            right_knee_up
+            and right_elbow_knee_distance
+            < knee_to_elbow_threshold
+        )
+
+        if visible:
+
+            if left_touch and stage != "left":
+                stage = "left"
+
+                if now - last_rep_time > REP_COOLDOWN:
+                    count += 1
+                    last_rep_time = now
+                    speak(f"Knee to Elbow {count}")
+
+            elif right_touch and stage != "right":
+                stage = "right"
+
+                if now - last_rep_time > REP_COOLDOWN:
+                    count += 1
+                    last_rep_time = now
+                    speak(f"Knee to Elbow {count}")
+
+        progress = 100 if (left_touch or right_touch) else 0
+
+        correct_posture = (
+            visible
+            and not (left_knee_up and right_knee_up)
+        )
+
+        posture_score = 100 if correct_posture else 70
+    
+    elif exercise_name == "Wall Sit":
+
+        left_hip = get_joint("hip", "LEFT")
+        left_knee = get_joint("knee", "LEFT")
+        left_ankle = get_joint("ankle", "LEFT")
+
+        right_hip = get_joint("hip", "RIGHT")
+        right_knee = get_joint("knee", "RIGHT")
+        right_ankle = get_joint("ankle", "RIGHT")
+
+        visible = (
+            left_hip[2] >= WALL_SIT["min_visibility"]
+            and left_knee[2] >= WALL_SIT["min_visibility"]
+            and left_ankle[2] >= WALL_SIT["min_visibility"]
+            and right_hip[2] >= WALL_SIT["min_visibility"]
+            and right_knee[2] >= WALL_SIT["min_visibility"]
+            and right_ankle[2] >= WALL_SIT["min_visibility"]
+        )
+
+        left_knee_angle = calculate_angle(
+            left_hip[:2],
+            left_knee[:2],
+            left_ankle[:2]
+        )
+
+        right_knee_angle = calculate_angle(
+            right_hip[:2],
+            right_knee[:2],
+            right_ankle[:2]
+        )
+
+        target = WALL_SIT["knee_angle_target"]
+        tolerance = WALL_SIT["knee_angle_tolerance"]
+
+        left_correct = (
+            target - tolerance
+            <= left_knee_angle
+            <= target + tolerance
+        )
+
+        right_correct = (
+            target - tolerance
+            <= right_knee_angle
+            <= target + tolerance
+        )
+
+        correct_position = (
+            left_correct
+            and right_correct
+        )
+
+        if visible:
+
+            if correct_position:
+
+                if stage != "holding":
+                    stage = "holding"
+                    hold_start_time = now
+
+                hold_time = now - hold_start_time
+
+                if hold_time >= WALL_SIT["hold_seconds"]:
+                    if now - last_rep_time > REP_COOLDOWN:
+                        count += 1
+                        last_rep_time = now
+                        stage = "completed"
+                        speak(f"Wall Sit {count}")
+
+            else:
+                stage = "ready"
+                hold_start_time = now
+
+        else:
+            stage = "ready"
+            hold_start_time = now
+
+        if visible and correct_position:
+            hold_time = now - hold_start_time
+            progress = interp_clip(
+                hold_time,
+                (0, WALL_SIT["hold_seconds"])
+            )
+        else:
+            progress = 0
+
+        correct_posture = visible and correct_position
+        posture_score = 100 if correct_posture else 70
+    
+    elif exercise_name == "Side Leg Raises":
+
+        left_hip = get_joint("hip", "LEFT")
+        left_knee = get_joint("knee", "LEFT")
+        left_ankle = get_joint("ankle", "LEFT")
+
+        right_hip = get_joint("hip", "RIGHT")
+        right_knee = get_joint("knee", "RIGHT")
+        right_ankle = get_joint("ankle", "RIGHT")
+
+        visible = (
+            left_hip[2] >= SIDE_LEG_RAISE["min_visibility"]
+            and left_knee[2] >= SIDE_LEG_RAISE["min_visibility"]
+            and left_ankle[2] >= SIDE_LEG_RAISE["min_visibility"]
+            and right_hip[2] >= SIDE_LEG_RAISE["min_visibility"]
+            and right_knee[2] >= SIDE_LEG_RAISE["min_visibility"]
+            and right_ankle[2] >= SIDE_LEG_RAISE["min_visibility"]
+        )
+
+        hip_width = abs(left_hip[0] - right_hip[0])
+        hip_width = max(hip_width, 1e-6)
+
+        left_leg_offset = abs(left_ankle[0] - left_hip[0]) / hip_width
+        right_leg_offset = abs(right_ankle[0] - right_hip[0]) / hip_width
+
+        leg_offset = max(
+            left_leg_offset,
+            right_leg_offset
+        )
+
+        left_knee_angle = calculate_angle(
+            left_hip[:2],
+            left_knee[:2],
+            left_ankle[:2]
+        )
+
+        right_knee_angle = calculate_angle(
+            right_hip[:2],
+            right_knee[:2],
+            right_ankle[:2]
+        )
+
+        knees_straight = (
+            left_knee_angle >= SIDE_LEG_RAISE["max_knee_bend"]
+            and right_knee_angle >= SIDE_LEG_RAISE["max_knee_bend"]
+        )
+
+        leg_raised = (
+            leg_offset >= SIDE_LEG_RAISE["up_threshold"]
+            and knees_straight
+        )
+
+        leg_lowered = (
+            leg_offset <= SIDE_LEG_RAISE["down_threshold"]
+        )
+
+        if visible:
+
+            if leg_raised:
+                stage = "up"
+
+            elif leg_lowered and stage == "up":
+                if now - last_rep_time > REP_COOLDOWN:
+                    count += 1
+                    last_rep_time = now
+                    stage = "down"
+                    speak(f"Side Leg Raise {count}")
+
+        progress = interp_clip(
+            leg_offset,
+            (
+                SIDE_LEG_RAISE["down_threshold"],
+                SIDE_LEG_RAISE["up_threshold"]
+            )
+        )
+
+        correct_posture = (
+            visible
+            and knees_straight
+        )
+
+        posture_score = 100 if correct_posture else 70
+        
+    
+    elif exercise_name == "Side Lunges":
+
+        left_hip = get_joint("hip", "LEFT")
+        left_knee = get_joint("knee", "LEFT")
+        left_ankle = get_joint("ankle", "LEFT")
+
+        right_hip = get_joint("hip", "RIGHT")
+        right_knee = get_joint("knee", "RIGHT")
+        right_ankle = get_joint("ankle", "RIGHT")
+
+        left_shoulder = get_joint("shoulder", "LEFT")
+        right_shoulder = get_joint("shoulder", "RIGHT")
+
+        visible = (
+            left_hip[2] >= SIDE_LUNGE["min_visibility"]
+            and left_knee[2] >= SIDE_LUNGE["min_visibility"]
+            and left_ankle[2] >= SIDE_LUNGE["min_visibility"]
+            and right_hip[2] >= SIDE_LUNGE["min_visibility"]
+            and right_knee[2] >= SIDE_LUNGE["min_visibility"]
+            and right_ankle[2] >= SIDE_LUNGE["min_visibility"]
+        )
+
+        left_knee_angle = calculate_angle(
+            left_hip[:2],
+            left_knee[:2],
+            left_ankle[:2]
+        )
+
+        right_knee_angle = calculate_angle(
+            right_hip[:2],
+            right_knee[:2],
+            right_ankle[:2]
+        )
+
+        # Determine which leg is currently bending.
+        if left_knee_angle < right_knee_angle:
+            active_side = "LEFT"
+            active_knee_angle = left_knee_angle
+        else:
+            active_side = "RIGHT"
+            active_knee_angle = right_knee_angle
+
+        # Detect lateral movement of the hips.
+        shoulder_mid_x = (
+            left_shoulder[0] + right_shoulder[0]
+        ) / 2
+
+        hip_mid_x = (
+            left_hip[0] + right_hip[0]
+        ) / 2
+
+        hip_shift = abs(hip_mid_x - shoulder_mid_x)
+
+        # Normalize hip movement relative to shoulder width.
+        shoulder_width = abs(
+            left_shoulder[0] - right_shoulder[0]
+        )
+
+        shoulder_width = max(shoulder_width, 1e-6)
+
+        normalized_hip_shift = hip_shift / shoulder_width
+
+        lateral_movement = (
+            normalized_hip_shift >= SIDE_LUNGE["hip_shift_threshold"]
+        )
+
+        good_form = (
+            active_knee_angle >= 70
+            and active_knee_angle <= 180
+            and lateral_movement
+        )
+
+        if visible:
+
+            # Down position
+            if (
+                active_knee_angle < SIDE_LUNGE["down_threshold"]
+                and lateral_movement
+                ):
+                stage = "down"
+
+            # Return to standing = one repetition
+            elif (
+                active_knee_angle > SIDE_LUNGE["up_threshold"]
+                and stage == "down"
+                and now - last_rep_time > REP_COOLDOWN
+            ):
+                count += 1
+                last_rep_time = now
+                stage = "up"
+                speak(f"Side Lunge {count}")
+
+        progress = interp_clip(
+            active_knee_angle,
+            (
+                SIDE_LUNGE["down_threshold"],
+                SIDE_LUNGE["up_threshold"]
+            )
+        )
+
+        correct_posture = visible and good_form
+
+        posture_score = (
+            100 if correct_posture else 70
+        )
+    
     elif exercise_name == 'Squats':
         knee_angle = calculate_angle(hip, knee, ankle)
         back_angle = calculate_angle(shoulder, hip, knee)
@@ -268,9 +816,525 @@ def exercise_logic(exercise_name, landmarks, mp_pose, smoother,
 
         progress = smooth_progress
 
-    elif exercise_name in ('Plank', 'Yoga'):
-        # For plank/yoga we check a reference straightness (shoulder-hip-ankle or knee)
-        ref_point = ankle if exercise_name == 'Plank' else knee
+    
+    elif exercise_name == "Lunges":
+
+        left_knee = calculate_angle(
+            get_joint("hip", "LEFT")[:2],
+            get_joint("knee", "LEFT")[:2],
+            get_joint("ankle", "LEFT")[:2]
+        )
+
+        right_knee = calculate_angle(
+            get_joint("hip", "RIGHT")[:2],
+            get_joint("knee", "RIGHT")[:2],
+            get_joint("ankle", "RIGHT")[:2]
+        )
+
+        side = "LEFT" if left_knee <= right_knee else "RIGHT"
+
+        hip = get_joint("hip", side)
+        knee = get_joint("knee", side)
+        ankle = get_joint("ankle", side)
+        shoulder = get_joint("shoulder", side)
+
+        knee_angle = left_knee if side == "LEFT" else right_knee
+
+        visible = (
+            hip[2] > LUNGE["min_visibility"]
+            and knee[2] > LUNGE["min_visibility"]
+            and ankle[2] > LUNGE["min_visibility"]
+        )
+
+        torso_angle = calculate_angle(
+            shoulder[:2],
+            hip[:2],
+            knee[:2]
+        )
+
+        shoulder_mid = (
+            get_joint("shoulder", "LEFT")[0]
+            + get_joint("shoulder", "RIGHT")[0]
+        ) / 2
+
+        hip_mid = (
+            get_joint("hip", "LEFT")[0]
+            + get_joint("hip", "RIGHT")[0]
+        ) / 2
+
+        balanced = abs(
+            shoulder_mid - hip_mid
+        ) <= LUNGE["balance_tolerance"]
+
+        correct_posture = (
+            visible
+            and torso_angle > 140
+            and balanced
+        )
+
+        progress = interp_clip(
+            knee_angle,
+            (
+                LUNGE["down_threshold"],
+                LUNGE["up_threshold"]
+            )
+        )
+
+        if visible:
+
+            if knee_angle < LUNGE["down_threshold"]:
+                stage = "down"
+
+            elif (
+                knee_angle > LUNGE["up_threshold"]
+                and stage == "down"
+                and now - last_rep_time > REP_COOLDOWN
+            ):
+                count += 1
+                stage = "up"
+                last_rep_time = now
+                speak(f"Lunge {count}")
+
+        posture_score = interp_clip(
+            torso_angle,
+            (140, 180)
+        )
+    elif exercise_name == "High Knees":
+
+        left_hip = get_joint("hip", "LEFT")
+        left_knee = get_joint("knee", "LEFT")
+        left_ankle = get_joint("ankle", "LEFT")
+
+        right_hip = get_joint("hip", "RIGHT")
+        right_knee = get_joint("knee", "RIGHT")
+        right_ankle = get_joint("ankle", "RIGHT")
+
+        visible = (
+            left_hip[2] >= HIGH_KNEES["min_visibility"]
+            and left_knee[2] >= HIGH_KNEES["min_visibility"]
+            and left_ankle[2] >= HIGH_KNEES["min_visibility"]
+            and right_hip[2] >= HIGH_KNEES["min_visibility"]
+            and right_knee[2] >= HIGH_KNEES["min_visibility"]
+            and right_ankle[2] >= HIGH_KNEES["min_visibility"]
+        )
+
+        # Vertical distance between hip and knee.
+        # Smaller normalized distance means the knee is raised.
+        left_leg_length = np.linalg.norm(
+            np.array(left_hip[:2]) - np.array(left_ankle[:2])
+        )
+
+        right_leg_length = np.linalg.norm(
+            np.array(right_hip[:2]) - np.array(right_ankle[:2])
+        )
+
+        left_knee_height = (
+            abs(left_knee[1] - left_hip[1])
+            / max(left_leg_length, 1e-6)
+        )
+
+        right_knee_height = (
+            abs(right_knee[1] - right_hip[1])
+            / max(right_leg_length, 1e-6)
+        )
+
+        left_knee_up = (
+            left_knee_height < HIGH_KNEES["knee_up_threshold"]
+        )
+
+        right_knee_up = (
+            right_knee_height < HIGH_KNEES["knee_up_threshold"]
+        )
+
+        if visible:
+
+            # Alternate between left and right knee.
+            if left_knee_up and stage != "left":
+
+                stage = "left"
+
+                if now - last_rep_time > REP_COOLDOWN:
+                    count += 1
+                    last_rep_time = now
+                    speak(f"High Knee {count}")
+
+            elif right_knee_up and stage != "right":
+
+                stage = "right"
+
+                if now - last_rep_time > REP_COOLDOWN:
+                    count += 1
+                    last_rep_time = now
+                    speak(f"High Knee {count}")
+
+        progress = 100 if (left_knee_up or right_knee_up) else 0
+
+        correct_posture = (
+            visible
+            and not (left_knee_up and right_knee_up)
+        )
+
+        posture_score = 100 if correct_posture else 70
+        
+    elif exercise_name == "Jumping Jacks":
+
+        left_wrist = get_joint("wrist", "LEFT")
+        right_wrist = get_joint("wrist", "RIGHT")
+        left_ankle = get_joint("ankle", "LEFT")
+        right_ankle = get_joint("ankle", "RIGHT")
+
+        visible = (
+            left_wrist[2] >= JUMPING_JACKS["min_visibility"]
+            and right_wrist[2] >= JUMPING_JACKS["min_visibility"]
+            and left_ankle[2] >= JUMPING_JACKS["min_visibility"]
+            and right_ankle[2] >= JUMPING_JACKS["min_visibility"]
+        )
+
+        # Normalize body measurements using shoulder width
+        shoulder_width = abs(
+            get_joint("shoulder", "LEFT")[0]
+            - get_joint("shoulder", "RIGHT")[0]
+        )
+
+        shoulder_width = max(shoulder_width, 1e-6)
+
+        # Hands above shoulder level
+        hands_up = (
+            left_wrist[1] < get_joint("shoulder", "LEFT")[1]
+            and right_wrist[1] < get_joint("shoulder", "RIGHT")[1]
+        )
+
+        # Legs opened wider than normal stance
+        ankle_distance = abs(left_ankle[0] - right_ankle[0])
+        legs_open = (
+            ankle_distance / shoulder_width
+            > JUMPING_JACKS["leg_open_threshold"]
+        )
+
+        jumping_position = hands_up and legs_open
+
+        if visible:
+
+            # Open position
+            if jumping_position:
+                stage = "open"
+
+            # Closed position after open = one repetition
+            elif not jumping_position and stage == "open":
+                if now - last_rep_time > REP_COOLDOWN:
+                    count += 1
+                    last_rep_time = now
+                    stage = "closed"
+                    speak(f"Jumping Jack {count}")
+
+        progress = 100 if jumping_position else 0
+
+        correct_posture = (
+            visible
+            and not (
+                hands_up and not legs_open
+            )
+        )
+
+        posture_score = 100 if correct_posture else 70
+    
+    elif exercise_name == "Shoulder Press":
+
+        elbow_angle = calculate_angle(
+            shoulder,
+            elbow,
+            wrist
+        )
+
+        visible = (
+            shoulder_vis >= SHOULDER_PRESS["min_visibility"]
+            and elbow_vis >= SHOULDER_PRESS["min_visibility"]
+            and wrist_vis >= SHOULDER_PRESS["min_visibility"]
+        )
+
+        if visible:
+
+            if elbow_angle > SHOULDER_PRESS["up_threshold"]:
+                stage = "up"
+
+            elif (
+                elbow_angle < SHOULDER_PRESS["down_threshold"]
+                and stage == "up"
+                and now - last_rep_time > REP_COOLDOWN
+            ):
+                count += 1
+                stage = "down"
+                last_rep_time = now
+                speak(f"Shoulder Press {count}")
+
+        if elbow_angle >= 160:
+            extension_status = "FULL EXTENSION"
+        elif elbow_angle >= 130:
+            extension_status = "NEARLY EXTENDED"
+        elif elbow_angle >= 90:
+            extension_status = "PRESSING"
+        else:
+            extension_status = "START POSITION"
+
+        back_angle = calculate_angle(
+            shoulder,
+            hip,
+            knee
+        )
+
+        if back_angle >= 160:
+            back_arch_status = "Neutral"
+        elif back_angle >= 140:
+            back_arch_status = "Slight Arch"
+        else:
+            back_arch_status = "Excessive Arch"
+
+        correct_posture = (
+            visible
+            and back_angle >= 140
+        )
+
+        progress = interp_clip(
+            elbow_angle,
+            (
+                SHOULDER_PRESS["down_threshold"],
+                SHOULDER_PRESS["up_threshold"]
+            )
+        )
+
+        posture_score = interp_clip(
+            back_angle,
+            (140, 180)
+        )
+    
+    
+    elif exercise_name == "Mountain Climbers":
+
+        left_hip = get_joint("hip", "LEFT")
+        left_knee = get_joint("knee", "LEFT")
+        left_ankle = get_joint("ankle", "LEFT")
+
+        right_hip = get_joint("hip", "RIGHT")
+        right_knee = get_joint("knee", "RIGHT")
+        right_ankle = get_joint("ankle", "RIGHT")
+
+        left_shoulder = get_joint("shoulder", "LEFT")
+        right_shoulder = get_joint("shoulder", "RIGHT")
+
+        visible = (
+            left_hip[2] >= MOUNTAIN_CLIMBER["min_visibility"]
+            and left_knee[2] >= MOUNTAIN_CLIMBER["min_visibility"]
+            and right_hip[2] >= MOUNTAIN_CLIMBER["min_visibility"]
+            and right_knee[2] >= MOUNTAIN_CLIMBER["min_visibility"]
+        )
+
+        left_leg_length = np.linalg.norm(
+            np.array(left_hip[:2]) - np.array(left_ankle[:2])
+        )
+
+        right_leg_length = np.linalg.norm(
+            np.array(right_hip[:2]) - np.array(right_ankle[:2])
+        )
+
+        left_knee_ratio = (
+            np.linalg.norm(
+                np.array(left_knee[:2]) - np.array(left_shoulder[:2])
+            ) / max(left_leg_length, 1e-6)
+        )
+
+        right_knee_ratio = (
+            np.linalg.norm(
+                np.array(right_knee[:2]) - np.array(right_shoulder[:2])
+            ) / max(right_leg_length, 1e-6)
+        )
+
+        left_knee_up = left_knee_ratio < MOUNTAIN_CLIMBER["knee_threshold"]
+        right_knee_up = right_knee_ratio < MOUNTAIN_CLIMBER["knee_threshold"]
+
+        if visible:
+
+            if left_knee_up and stage != "left":
+                stage = "left"
+
+                if now - last_rep_time > REP_COOLDOWN:
+                    count += 1
+                    last_rep_time = now
+                    speak(f"Mountain Climber {count}")
+
+            elif right_knee_up and stage != "right":
+                stage = "right"
+
+                if now - last_rep_time > REP_COOLDOWN:
+                    count += 1
+                    last_rep_time = now
+                    speak(f"Mountain Climber {count}")
+
+        progress = 100 if (left_knee_up or right_knee_up) else 0
+
+        correct_posture = (
+            visible
+            and not (left_knee_up and right_knee_up)
+        )
+
+        posture_score = 100 if correct_posture else 70
+    elif exercise_name == "Glute Bridge":
+
+        hip_angle = calculate_angle(
+            shoulder,
+            hip,
+            knee
+        )
+
+        visible = (
+            shoulder_vis >= GLUTE_BRIDGE["min_visibility"]
+            and hip_vis >= GLUTE_BRIDGE["min_visibility"]
+            and knee_vis >= GLUTE_BRIDGE["min_visibility"]
+        )
+
+        if visible:
+
+            if hip_angle > GLUTE_BRIDGE["up_threshold"]:
+                stage = "up"
+
+            elif (
+                hip_angle < GLUTE_BRIDGE["down_threshold"]
+                and stage == "up"
+                and now - last_rep_time > REP_COOLDOWN
+            ):
+                count += 1
+                stage = "down"
+                last_rep_time = now
+                speak(f"Glute Bridge {count}")
+
+        progress = interp_clip(
+            hip_angle,
+            (
+                GLUTE_BRIDGE["down_threshold"],
+                GLUTE_BRIDGE["up_threshold"]
+            )
+        )
+
+        correct_posture = (
+            visible
+            and hip_angle > 140
+        )
+
+        posture_score = interp_clip(
+            hip_angle,
+            (100, 180)
+        )
+    # ------------------ Push-up ------------------
+    elif exercise_name == 'Push-ups':
+
+        # Elbow angle:
+        # < 90 degrees  -> DOWN
+        # > 160 degrees -> UP
+        #
+        # One repetition:
+        # DOWN -> UP
+
+        key_landmarks_visible = (
+            shoulder_vis >= PUSHUP['min_visibility']
+            and elbow_vis >= PUSHUP['min_visibility']
+            and wrist_vis >= PUSHUP['min_visibility']
+            and hip_vis >= PUSHUP['min_visibility']
+            and ankle_vis >= PUSHUP['min_visibility']
+        )
+
+        elbow_angle = calculate_angle(
+            shoulder,
+            elbow,
+            wrist
+        )
+
+        body_angle = calculate_angle(
+            shoulder,
+            hip,
+            ankle
+        )
+
+        expected_hip_y = (
+            shoulder_y + ankle_y
+        ) / 2
+
+        hip_deviation = (
+            hip_y - expected_hip_y
+        )
+
+        if body_angle > 160:
+            body_alignment = "Straight"
+        elif body_angle > 140:
+            body_alignment = "Slight Bend"
+        else:
+            body_alignment = "Poor Form"
+
+        if abs(hip_deviation) <= PUSHUP['hip_sag_tolerance']:
+            hip_status = "LEVEL"
+        elif hip_deviation > PUSHUP['hip_sag_tolerance']:
+            hip_status = "SAGGING"
+        else:
+            hip_status = "PIKED UP"
+
+        posture_score = interp_clip(
+            body_angle,
+            (140, 180)
+        )
+
+        correct_posture = (
+            key_landmarks_visible
+            and body_alignment != "Poor Form"
+            and hip_status == "LEVEL"
+        )
+
+        progress = interp_clip(
+            elbow_angle,
+            (
+                PUSHUP['down_threshold'],
+                PUSHUP['up_threshold']
+            )
+        )
+
+        buf = state.setdefault(
+            'angle_buf',
+            deque(maxlen=SMOOTHING_WINDOW)
+        )
+        buf.append(progress)
+        smooth_progress = float(np.mean(buf))
+
+        if correct_posture:
+            if posture_ok_since is None:
+                posture_ok_since = now
+        else:
+            posture_ok_since = None
+
+        posture_ready = (
+            posture_ok_since is not None
+            and
+            (now - posture_ok_since) > POSTURE_HOLD_SEC
+        )
+
+        if posture_ready:
+
+            if elbow_angle < PUSHUP['down_threshold']:
+                stage = 'down'
+
+            if (
+                elbow_angle > PUSHUP['up_threshold']
+                and
+                stage == 'down'
+                and
+                (now - last_rep_time) > REP_COOLDOWN
+            ):
+                count += 1
+                last_rep_time = now
+                stage = 'up'
+                speak(f"Push-up {count}")
+
+        progress = smooth_progress
+
+    elif exercise_name == 'Plank':
+        # For plank we check a reference straightness shoulder-hip-ankle
+        ref_point = ankle
         ref_angle = calculate_angle(shoulder, hip, ref_point)
         posture_score = interp_clip(ref_angle, PLANK['ref_angle_range'])
         correct_posture = posture_score > PLANK['back_ok']
@@ -400,15 +1464,17 @@ def start_tracking():
     except ValueError:
         result_label.config(text="❌ Enter valid numbers!")
 
+
 # ------------------ BMI recommendation & unchanged helpers ------------------
 
 def recommend_exercise(bmi):
     if bmi < 18.5:
-        return ["Push-ups", "Plank", "Bicep Curl"]
+        return ["Push-ups", "Plank", "Bicep Curl","Shoulder Press" ,"Glute Bridge","Arm Circles"]
     elif bmi < 25:
-        return ["Squats", "Lunges", "Plank", "Bicep Curl"]
+        return ["Squats", "Lunges", "Plank", "Bicep Curl","Push-ups" , "Shoulder Press","Glute Bridge", "Mountain Climbers","Jumping Jacks" , "High Knees","Side Lunges","Side Leg Raises","Standing Knee-to-Elbow","Arm Circles"]
     else:
-        return ["Walking", "Stretching", "Yoga", "Plank"]
+        return ["Walking", "Stretching", "Push-ups", "Plank","Mountain Climbers", "Glute Bridge","Squats", "Lunges","Jumping Jacks", "High Knees","Side Lunges","Side Leg Raises","Standing Knee-to-Elbow","Arm Circles"]       
+
 
 # ------------------ UI Setup ------------------
 root = tk.Tk()
@@ -433,7 +1499,7 @@ weight_entry.pack(fill="x", padx=20, pady=(0, 8))
 tk.Label(root, text="Select Exercise:", bg="#0f1720", fg="white").pack(anchor="w", padx=20)
 exercise_var = tk.StringVar(value="Bicep Curl")
 exercise_dropdown = ttk.Combobox(root, textvariable=exercise_var, state="readonly",
-                                 values=("Bicep Curl", "Squats", "Plank", "Yoga"))
+                                 values=("Bicep Curl", "Squats", "Push-ups", "Plank","Lunges","Shoulder Press","Glute Bridge","Mountain Climbers", "Jumping Jacks", "High Knees", "Side Lunges", "Side Leg Raises","Wall Sit","Standing Knee-to-Elbow","Arm Circles"))
 exercise_dropdown.pack(fill="x", padx=20, pady=6)
 
 tk.Button(root, text="Start Exercise", command=start_tracking,
